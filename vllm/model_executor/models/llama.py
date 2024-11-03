@@ -23,6 +23,7 @@
 """Inference-only LLaMA model compatible with HuggingFace weights."""
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
+from numpy import isin
 import torch
 from torch import nn
 from transformers import LlamaConfig
@@ -297,12 +298,22 @@ class LlamaModel(nn.Module):
             )
         else:
             self.embed_tokens = PPMissingLayer()
+        
+        def _llama_layer_fn(prefix):
+            layer_idx = int(prefix.split(".")[-1])
+            assert cache_config is not None
+            orig_sliding_window = cache_config.sliding_window
+            assert isinstance(orig_sliding_window, list)
+            cache_config.sliding_window = orig_sliding_window[layer_idx]
+            output = LlamaDecoderLayer(config=config,
+                                     cache_config=cache_config,
+                                     quant_config=quant_config,
+                                     prefix=prefix)
+            cache_config.sliding_window = orig_sliding_window
+            return output
         self.start_layer, self.end_layer, self.layers = make_layers(
             config.num_hidden_layers,
-            lambda prefix: LlamaDecoderLayer(config=config,
-                                             cache_config=cache_config,
-                                             quant_config=quant_config,
-                                             prefix=prefix),
+            layer_fn=_llama_layer_fn,
             prefix=f"{prefix}.layers",
         )
         if get_pp_group().is_last_rank:
