@@ -1006,6 +1006,7 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
         needs_attn_backend = (num_attn_heads != 0
                               or self.model_config.is_attention_free)
 
+        print(f'{self.kv_cache_dtype=}')
         self.attn_backend = get_attn_backend(
             self.model_config.get_head_size(),
             self.model_config.dtype,
