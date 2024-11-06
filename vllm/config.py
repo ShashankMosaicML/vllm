@@ -202,16 +202,16 @@ class ModelConfig:
             isinstance(sliding_window, list) or
             (self.hf_text_config.model_type in ["gemma2"]))
 
-        if (not self.disable_sliding_window and has_interleaved_attention):
-            sliding_window_len_min = get_min_sliding_window(
-                self.hf_text_config.sliding_window)
+        # if (not self.disable_sliding_window and has_interleaved_attention):
+        #     sliding_window_len_min = get_min_sliding_window(
+        #         self.hf_text_config.sliding_window)
 
-            print_warning_once(
-                f"{self.hf_text_config.model_type} has interleaved attention, "
-                "which is currently not supported by vLLM. Disabling sliding "
-                "window and capping the max length to the sliding window size "
-                f"({sliding_window_len_min}).")
-            self.disable_sliding_window = True
+        #     print_warning_once(
+        #         f"{self.hf_text_config.model_type} has interleaved attention, "
+        #         "which is currently not supported by vLLM. Disabling sliding "
+        #         "window and capping the max length to the sliding window size "
+        #         f"({sliding_window_len_min}).")
+        #     self.disable_sliding_window = True
 
         self.max_model_len = _get_and_verify_max_len(
             hf_config=self.hf_text_config,

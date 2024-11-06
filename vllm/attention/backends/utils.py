@@ -46,8 +46,8 @@ def compute_slot_mapping_start_idx(is_prompt: bool, query_len: int,
     Compute the start index of slot mapping.
     """
     start_idx = 0
-    if is_prompt and sliding_window is not None:
-        start_idx = max(0, query_len - sliding_window)
+    # if is_prompt and sliding_window is not None:
+    #     start_idx = max(0, query_len - sliding_window)
     return start_idx
 
 

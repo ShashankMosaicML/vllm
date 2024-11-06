@@ -458,11 +458,11 @@ class ModelInputForGPUBuilder(ModelRunnerInputBuilderBase[ModelInputForGPU]):
         self.chunked_prefill_enabled = (
             self.scheduler_config is not None
             and self.scheduler_config.chunked_prefill_enabled)
-        if self.sliding_window is not None:
-            self.sliding_window_blocks = (
-                self.sliding_window + self.block_size - 1) // self.block_size
-            self.block_aligned_sliding_window = \
-                self.sliding_window_blocks * self.block_size
+        # if self.sliding_window is not None:
+        #     self.sliding_window_blocks = (
+        #         self.sliding_window + self.block_size - 1) // self.block_size
+        #     self.block_aligned_sliding_window = \
+        #         self.sliding_window_blocks * self.block_size
 
     def _compute_lens(self, inter_data: InterDataForSeqGroup, seq_idx: int,
                       seq_group_metadata: SequenceGroupMetadata):
@@ -518,7 +518,7 @@ class ModelInputForGPUBuilder(ModelRunnerInputBuilderBase[ModelInputForGPU]):
         # Note that prefix caching does not support sliding window.
         prefix_cache_hit = (computed_block_nums is not None
                             and len(computed_block_nums) > 0
-                            and self.sliding_window is None
+                            # and self.sliding_window is None
                             and inter_data.is_prompt)
         inter_data.prefix_cache_hit = prefix_cache_hit
 
@@ -572,17 +572,17 @@ class ModelInputForGPUBuilder(ModelRunnerInputBuilderBase[ModelInputForGPU]):
         """
         curr_sliding_window_block = 0
         sliding_seq_len = inter_data.seq_lens[seq_idx]
-        if not inter_data.is_prompt and self.sliding_window is not None:
-            # TODO(sang): This is a hack to make sliding window work with
-            # paged attn. We can remove it if we make paged attn kernel
-            # to properly handle slinding window attn.
-            curr_sliding_window_block = self.sliding_window_blocks
-            # number of elements in last block
-            suff_len = inter_data.seq_lens[seq_idx] % self.block_size
-            sliding_seq_len = min(inter_data.seq_lens[seq_idx],
-                                  self.block_aligned_sliding_window + suff_len)
-            if suff_len > 0:
-                curr_sliding_window_block += 1
+        # if not inter_data.is_prompt and self.sliding_window is not None:
+        #     # TODO(sang): This is a hack to make sliding window work with
+        #     # paged attn. We can remove it if we make paged attn kernel
+        #     # to properly handle slinding window attn.
+        #     curr_sliding_window_block = self.sliding_window_blocks
+        #     # number of elements in last block
+        #     suff_len = inter_data.seq_lens[seq_idx] % self.block_size
+        #     sliding_seq_len = min(inter_data.seq_lens[seq_idx],
+        #                           self.block_aligned_sliding_window + suff_len)
+        #     if suff_len > 0:
+        #         curr_sliding_window_block += 1
 
         inter_data.curr_sliding_window_blocks[
             seq_idx] = curr_sliding_window_block

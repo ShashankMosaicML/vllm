@@ -74,14 +74,14 @@ class SelfAttnBlockSpaceManager(BlockSpaceManager):
         # max_block_sliding_window is the max number of blocks that need to be
         # allocated
         self.max_block_sliding_window = None
-        if sliding_window is not None:
-            # +1 here because // rounds down
-            num_blocks = sliding_window // block_size + 1
-            # +1 here because the last block may not be full,
-            # and so the sequence stretches one more block at the beginning
-            # For example, if sliding_window is 3 and block_size is 4,
-            # we may need 2 blocks when the second block only holds 1 token.
-            self.max_block_sliding_window = num_blocks + 1
+        # if sliding_window is not None:
+        #     # +1 here because // rounds down
+        #     num_blocks = sliding_window // block_size + 1
+        #     # +1 here because the last block may not be full,
+        #     # and so the sequence stretches one more block at the beginning
+        #     # For example, if sliding_window is 3 and block_size is 4,
+        #     # we may need 2 blocks when the second block only holds 1 token.
+        #     self.max_block_sliding_window = num_blocks + 1
 
         self.watermark = watermark
         assert watermark >= 0.0
