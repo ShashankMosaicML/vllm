@@ -4,6 +4,8 @@ import contextlib
 import datetime
 import enum
 import gc
+import getpass
+import importlib.util
 import inspect
 import ipaddress
 import os
@@ -88,9 +90,6 @@ STR_NOT_IMPL_ENC_DEC_PROMPT_ADAPTER = ("Prompt adapters are not "
                                        "currently supported with encoder/"
                                        "decoder models.")
 
-STR_NOT_IMPL_ENC_DEC_CPU = ("CPU is not currently supported with "
-                            "encoder/decoder models.")
-
 # Efficiently import all enc/dec error strings
 # rather than having to import all of the above
 STR_NOT_IMPL_ENC_DEC_ERR_STRS = {
@@ -105,7 +104,6 @@ STR_NOT_IMPL_ENC_DEC_ERR_STRS = {
     "STR_NOT_IMPL_ENC_DEC_SPEC_DEC": STR_NOT_IMPL_ENC_DEC_SPEC_DEC,
     "STR_NOT_IMPL_ENC_DEC_BACKEND": STR_NOT_IMPL_ENC_DEC_BACKEND,
     "STR_NOT_IMPL_ENC_DEC_PROMPT_ADAPTER": STR_NOT_IMPL_ENC_DEC_PROMPT_ADAPTER,
-    "STR_NOT_IMPL_ENC_DEC_CPU": STR_NOT_IMPL_ENC_DEC_CPU
 }
 
 # Constants related to forcing the attention backend selection
@@ -708,6 +706,12 @@ def create_kv_caches_with_random(
 
 
 @lru_cache
+def print_info_once(msg: str) -> None:
+    # Set the stacklevel to 2 to print the caller's line info
+    logger.info(msg, stacklevel=2)
+
+
+@lru_cache
 def print_warning_once(msg: str) -> None:
     # Set the stacklevel to 2 to print the caller's line info
     logger.warning(msg, stacklevel=2)
@@ -727,6 +731,9 @@ def is_pin_memory_available() -> bool:
         return False
     elif current_platform.is_neuron():
         print_warning_once("Pin memory is not supported on Neuron.")
+        return False
+    elif current_platform.is_hpu():
+        print_warning_once("Pin memory is not supported on HPU.")
         return False
     elif current_platform.is_cpu() or current_platform.is_openvino():
         return False
@@ -968,6 +975,8 @@ def enable_trace_function_call_for_thread() -> None:
 
     if envs.VLLM_TRACE_FUNCTION:
         tmp_dir = tempfile.gettempdir()
+        # add username to tmp_dir to avoid permission issues
+        tmp_dir = os.path.join(tmp_dir, getpass.getuser())
         filename = (f"VLLM_TRACE_FUNCTION_for_process_{os.getpid()}"
                     f"_thread_{threading.get_ident()}_"
                     f"at_{datetime.datetime.now()}.log").replace(" ", "_")
@@ -1148,8 +1157,22 @@ class StoreBoolean(argparse.Action):
                              "Expected 'true' or 'false'.")
 
 
+class SortedHelpFormatter(argparse.HelpFormatter):
+    """SortedHelpFormatter that sorts arguments by their option strings."""
+
+    def add_arguments(self, actions):
+        actions = sorted(actions, key=lambda x: x.option_strings)
+        super().add_arguments(actions)
+
+
 class FlexibleArgumentParser(argparse.ArgumentParser):
     """ArgumentParser that allows both underscore and dash in names."""
+
+    def __init__(self, *args, **kwargs):
+        # Set the default 'formatter_class' to SortedHelpFormatter
+        if 'formatter_class' not in kwargs:
+            kwargs['formatter_class'] = SortedHelpFormatter
+        super().__init__(*args, **kwargs)
 
     def parse_args(self, args=None, namespace=None):
         if args is None:
@@ -1169,6 +1192,10 @@ class FlexibleArgumentParser(argparse.ArgumentParser):
                 else:
                     processed_args.append('--' +
                                           arg[len('--'):].replace('_', '-'))
+            elif arg.startswith('-O') and arg != '-O' and len(arg) == 2:
+                # allow -O flag to be used without space, e.g. -O3
+                processed_args.append('-O')
+                processed_args.append(arg[2:])
             else:
                 processed_args.append(arg)
 
@@ -1265,7 +1292,7 @@ class FlexibleArgumentParser(argparse.ArgumentParser):
 
         config: Dict[str, Union[int, str]] = {}
         try:
-            with open(file_path, 'r') as config_file:
+            with open(file_path) as config_file:
                 config = yaml.safe_load(config_file)
         except Exception as ex:
             logger.error(
@@ -1474,20 +1501,14 @@ class LazyDict(Mapping, Generic[T]):
             self._dict[key] = self._factory[key]()
         return self._dict[key]
 
+    def __setitem__(self, key: str, value: Callable[[], T]):
+        self._factory[key] = value
+
     def __iter__(self):
         return iter(self._factory)
 
     def __len__(self):
         return len(self._factory)
-
-
-def combine_fx_passes(passes: List[Callable]) -> Callable:
-
-    def combined_fx(graph) -> None:
-        for fx in passes:
-            fx(graph)
-
-    return combined_fx
 
 
 def weak_ref_tensor(tensor: torch.Tensor) -> torch.Tensor:
@@ -1521,6 +1542,25 @@ def is_in_doc_build() -> bool:
         return isinstance(torch, _MockModule)
     except ModuleNotFoundError:
         return False
+
+
+def import_from_path(module_name: str, file_path: Union[str, os.PathLike]):
+    """
+    Import a Python file according to its file path.
+
+    Based on the official recipe:
+    https://docs.python.org/3/library/importlib.html#importing-a-source-file-directly
+    """
+    spec = importlib.util.spec_from_file_location(module_name, file_path)
+    if spec is None:
+        raise ModuleNotFoundError(f"No module named '{module_name}'")
+
+    assert spec.loader is not None
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 # create a library to hold the custom op
@@ -1564,3 +1604,12 @@ def direct_register_custom_op(
     my_lib.impl(op_name, op_func, "CUDA")
     if fake_impl is not None:
         my_lib._register_fake(op_name, fake_impl)
+
+
+def resolve_obj_by_qualname(qualname: str) -> Any:
+    """
+    Resolve an object by its fully qualified name.
+    """
+    module_name, obj_name = qualname.rsplit(".", 1)
+    module = importlib.import_module(module_name)
+    return getattr(module, obj_name)
